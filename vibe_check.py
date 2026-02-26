@@ -16,6 +16,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 from rich import box
+from rich.prompt import Prompt, IntPrompt
 
 try:
     from groq import Groq
@@ -100,8 +101,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--path",
         type=str,
-        required=True,
-        help="Path to the project directory to scan.",
+        default=None,
+        help="Path to the project directory to scan (leave blank for interactive wizard).",
     )
     parser.add_argument(
         "--ext",
@@ -219,10 +220,19 @@ def write_output(scan_path: str, markdown: str) -> Path:
 
 def main():
     """Entry point — orchestrates the full pipeline with rich CLI output."""
-    args = parse_args()
-    root = Path(args.path).resolve()
-
     print_banner()
+
+    args = parse_args()
+
+    # Interactive Wizard if no path provided
+    if args.path is None:
+        console.print("[dim]✨ No --path provided. Let's set it up![/dim]")
+        args.path = Prompt.ask("📂 [bold cyan]Directory to scan[/bold cyan]", default=".")
+        args.ext = Prompt.ask("📄 [bold cyan]File extension to look for[/bold cyan]", default=".py")
+        args.top = IntPrompt.ask("🔢 [bold cyan]Max files to analyze[/bold cyan]", default=3)
+        console.print()
+
+    root = Path(args.path).resolve()
 
     # ── Step 1: Discovery ────────────────────────────────────────────────
     console.print(f"[bold cyan]▸ STEP 1[/bold cyan]  Scanning [yellow]{root}[/yellow] for [green]{args.ext}[/green] files…\n")
