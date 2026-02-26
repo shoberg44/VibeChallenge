@@ -4,6 +4,8 @@
 
 # 🎯 vibe-check
 
+![vibe-check](thumbnail.png)
+
 **Scan your codebase. Extract your coding standards. Automatically.**
 
 `vibe-check` is a Python CLI developer tool that scans a local directory for source files, extracts their contents, and sends them to Groq's blazing-fast LLM API (Llama 3.3 70B) to generate a customized `ai-coding-standards.md` file that defines your project's strict coding conventions.
