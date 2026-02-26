@@ -1,3 +1,7 @@
+# NOTE: This project is 100% vibe coded, its contents do not reflect my style or ability, only the idea and design
+
+3rd place prize winner for the 2026 Vibe Code Competition. This hackathon lasted 1hr and tasked participants to create a developer tool using AI.
+
 # 🎯 vibe-check
 
 **Scan your codebase. Extract your coding standards. Automatically.**
