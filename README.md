@@ -29,43 +29,34 @@ pip install -r requirements.txt
 
 You need a free Groq API key to run the tool. Get one at [console.groq.com](https://console.groq.com).
 
-Set it as an environment variable so you don't have to keep typing it:
+Create a `.env` file in the root of the project and add your key:
 
-**Windows (PowerShell):**
-```powershell
-$env:GROQ_API_KEY = "your-api-key-here"
+```ini
+GROQ_API_KEY=your-api-key-here
 ```
 
-**Mac/Linux (bash/zsh):**
-```bash
-export GROQ_API_KEY="your-api-key-here"
-```
+The tool will automatically load it.
 
 ## 🚀 Usage
 
-**Basic usage** (scan the current directory for `.py` files):
+**Interactive Wizard** (recommended):
+Just run the tool without any flags to start the guided setup!
 ```bash
+python vibe_check.py
+```
+
+**Fast Mode** (skip the wizard):
+You can bypass the wizard by providing the `--path` flag:
+
+```bash
+# Scan current directory for .py files
 python vibe_check.py --path .
-```
 
-**Scan a specific project path:**
-```bash
-python vibe_check.py --path C:\Projects\MyCoolApp
-```
-
-**Scan for a different file extension** (e.g., JavaScript):
-```bash
+# Scan for a different file extension (e.g., JavaScript)
 python vibe_check.py --path . --ext .js
-```
 
-**Analyze more files** (e.g., top 5 largest instead of 3):
-```bash
+# Analyze more files (e.g., top 5 largest instead of 3)
 python vibe_check.py --path . --top 5
-```
-
-If you prefer to **pass your API key directly**:
-```bash
-python vibe_check.py --path . --api-key <YOUR_KEY>
 ```
 
 ## 📄 Output
