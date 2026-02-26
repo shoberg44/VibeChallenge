@@ -245,11 +245,10 @@ class TestAggregateContent:
 class TestParseArgs:
     """Tests for parse_args(argv)."""
 
-    def test_path_is_required(self):
-        """Omitting --path should raise SystemExit (argparse error)."""
-        with pytest.raises(SystemExit) as exc_info:
-            vibe_check.parse_args([])
-        assert exc_info.value.code != 0  # argparse exits with code 2
+    def test_path_defaults_to_none(self):
+        """Omitting --path should result in args.path being None (triggering the wizard)."""
+        ns = vibe_check.parse_args([])
+        assert ns.path is None
 
     def test_ext_defaults_to_py(self):
         """--ext should default to '.py' when not provided."""
@@ -328,11 +327,11 @@ class TestWriteOutput:
 class TestCallLLM:
     """Tests for call_llm(content, api_key).
 
-    The OpenAI client is **always** mocked so no real API calls are made.
+    The Groq client is **always** mocked so no real API calls are made.
     """
 
     def _build_mock_response(self, text: str = "mock analysis") -> MagicMock:
-        """Return a mock that mimics the OpenAI chat completion response."""
+        """Return a mock that mimics the Groq chat completion response."""
         mock_message = MagicMock()
         mock_message.content = text
 
@@ -343,24 +342,24 @@ class TestCallLLM:
         mock_response.choices = [mock_choice]
         return mock_response
 
-    @patch("vibe_check.OpenAI")
-    def test_calls_openai_with_correct_model(self, mock_openai_cls):
-        """The LLM call must use the 'gpt-4o-mini' model."""
+    @patch("vibe_check.Groq")
+    def test_calls_groq_with_correct_model(self, mock_groq_cls):
+        """The LLM call must use the 'llama-3.3-70b-versatile' model."""
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = self._build_mock_response()
-        mock_openai_cls.return_value = mock_client
+        mock_groq_cls.return_value = mock_client
 
         vibe_check.call_llm("sample code", api_key="sk-test")
 
         call_kwargs = mock_client.chat.completions.create.call_args
-        assert call_kwargs.kwargs["model"] == "gpt-4o-mini"
+        assert call_kwargs.kwargs["model"] == "llama-3.3-70b-versatile"
 
-    @patch("vibe_check.OpenAI")
-    def test_sends_system_prompt(self, mock_openai_cls):
+    @patch("vibe_check.Groq")
+    def test_sends_system_prompt(self, mock_groq_cls):
         """The system prompt constant should be included in the messages."""
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = self._build_mock_response()
-        mock_openai_cls.return_value = mock_client
+        mock_groq_cls.return_value = mock_client
 
         vibe_check.call_llm("sample code", api_key="sk-test")
 
@@ -370,63 +369,63 @@ class TestCallLLM:
         assert len(system_msgs) == 1
         assert system_msgs[0]["content"] == vibe_check.SYSTEM_PROMPT
 
-    @patch("vibe_check.OpenAI")
-    def test_returns_response_content(self, mock_openai_cls):
+    @patch("vibe_check.Groq")
+    def test_returns_response_content(self, mock_groq_cls):
         """call_llm should return the text content from the API response."""
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = self._build_mock_response(
             "# Generated Standards"
         )
-        mock_openai_cls.return_value = mock_client
+        mock_groq_cls.return_value = mock_client
 
         result = vibe_check.call_llm("code here", api_key="sk-test")
         assert result == "# Generated Standards"
 
     def test_exits_when_no_api_key(self, monkeypatch):
         """Should sys.exit(1) when no API key is provided and env var is unset."""
-        monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("GROQ_API_KEY", raising=False)
         with pytest.raises(SystemExit) as exc_info:
             vibe_check.call_llm("code", api_key=None)
         assert exc_info.value.code == 1
 
-    @patch("vibe_check.OpenAI")
-    def test_exits_on_api_error(self, mock_openai_cls):
+    @patch("vibe_check.Groq")
+    def test_exits_on_api_error(self, mock_groq_cls):
         """Should sys.exit(1) when the API raises an exception."""
         mock_client = MagicMock()
         mock_client.chat.completions.create.side_effect = RuntimeError("API boom")
-        mock_openai_cls.return_value = mock_client
+        mock_groq_cls.return_value = mock_client
 
         with pytest.raises(SystemExit) as exc_info:
             vibe_check.call_llm("code", api_key="sk-test")
         assert exc_info.value.code == 1
 
-    def test_exits_when_openai_not_installed(self, monkeypatch):
-        """Should sys.exit(1) when the openai package is not available."""
-        monkeypatch.setattr(vibe_check, "OpenAI", None)
+    def test_exits_when_groq_not_installed(self, monkeypatch):
+        """Should sys.exit(1) when the groq package is not available."""
+        monkeypatch.setattr(vibe_check, "Groq", None)
         with pytest.raises(SystemExit) as exc_info:
             vibe_check.call_llm("code", api_key="sk-test")
         assert exc_info.value.code == 1
 
-    @patch("vibe_check.OpenAI")
-    def test_uses_env_var_when_no_arg(self, mock_openai_cls, monkeypatch):
-        """Falls back to OPENAI_API_KEY env var when api_key arg is None."""
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-env-key")
+    @patch("vibe_check.Groq")
+    def test_uses_env_var_when_no_arg(self, mock_groq_cls, monkeypatch):
+        """Falls back to GROQ_API_KEY env var when api_key arg is None."""
+        monkeypatch.setenv("GROQ_API_KEY", "sk-env-key")
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = self._build_mock_response()
-        mock_openai_cls.return_value = mock_client
+        mock_groq_cls.return_value = mock_client
 
         vibe_check.call_llm("code", api_key=None)
 
-        mock_openai_cls.assert_called_once_with(api_key="sk-env-key")
+        mock_groq_cls.assert_called_once_with(api_key="sk-env-key")
 
-    @patch("vibe_check.OpenAI")
-    def test_prefers_explicit_key_over_env(self, mock_openai_cls, monkeypatch):
+    @patch("vibe_check.Groq")
+    def test_prefers_explicit_key_over_env(self, mock_groq_cls, monkeypatch):
         """An explicitly passed api_key should take precedence over the env var."""
-        monkeypatch.setenv("OPENAI_API_KEY", "sk-env-key")
+        monkeypatch.setenv("GROQ_API_KEY", "sk-env-key")
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = self._build_mock_response()
-        mock_openai_cls.return_value = mock_client
+        mock_groq_cls.return_value = mock_client
 
         vibe_check.call_llm("code", api_key="sk-explicit")
 
-        mock_openai_cls.assert_called_once_with(api_key="sk-explicit")
+        mock_groq_cls.assert_called_once_with(api_key="sk-explicit")
