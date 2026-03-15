@@ -16,7 +16,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.text import Text
 from rich import box
-from rich.prompt import Prompt, IntPrompt
+from rich.prompt import Prompt, IntPrompt, Confirm
 
 try:
     from groq import Groq
@@ -38,26 +38,29 @@ IGNORE_DIRS = {
     ".mypy_cache", ".pytest_cache", ".ruff_cache",
 }
 
-SYSTEM_PROMPT = (
-    "You are a Staff-Level Principal Engineer performing a rigorous codebase analysis. "
-    "Your objective is to extract, synthesize, and enforce the definitive coding standards "
-    "observed in the provided source files.\n\n"
-    "Produce a highly polished, professional Markdown document containing the following sections. "
-    "For EVERY rule you define, you MUST provide a concise code snippet demonstrating the "
-    "'Do' and 'Don't' approaches.\n\n"
-    "### Required Sections:\n"
-    "1. **Core Naming Conventions** — Deep dive into variables, functions, classes, and constants.\n"
-    "2. **Documentation & Comments** — Required docstring format (e.g., Google/NumPy), type hinting rules, and acceptable inline comment usage.\n"
-    "3. **Import Management** — Strict ordering (stdlib, third-party, local) and usage of absolute vs. relative imports.\n"
-    "4. **Error Handling & Resilience** — Standard exception patterns, logging practices, and return types.\n"
-    "5. **Architectural & Design Patterns** — High-level structural choices observed in the code.\n"
-    "6. **Strict Anti-Patterns** — Call out 2-3 specific bad habits to aggressively avoid.\n\n"
-    "**Formatting Rules:**\n"
-    "- Use bold headings and clean sub-lists.\n"
-    "- Ensure code blocks have massive contrast and are perfectly syntactically correct.\n"
-    "- Keep the tone authoritative, clear, and pragmatic.\n"
-    "- Do NOT add generic introductory or concluding text (e.g., 'Here are the standards'). Start directly with the title."
-)
+def get_system_prompt(ext: str) -> str:
+    """Generate a language-aware system prompt based on the file extension."""
+    lang_name = ext.lstrip(".").upper() if ext else "PROJECT"
+    return (
+        f"You are a Staff-Level Principal Engineer performing a rigorous codebase analysis of {lang_name} files. "
+        "Your objective is to extract, synthesize, and enforce the definitive coding standards "
+        f"observed in the provided {ext} source files.\n\n"
+        "Produce a highly polished, professional Markdown document containing the following sections. "
+        "For EVERY rule you define, you MUST provide a concise code snippet demonstrating the "
+        "'Do' and 'Don't' approaches.\n\n"
+        "### Required Sections:\n"
+        "1. **Core Naming Conventions** — Deep dive into variables, functions, classes, and constants.\n"
+        "2. **Documentation & Comments** — Required comment blocks, docstring/documentation formats, and acceptable inline comment usage.\n"
+        "3. **Code Organization & Imports** — Structuring files, module ordering, and usage of imports or includes.\n"
+        "4. **Error Handling & Resilience** — Standard exception/error patterns, validation, and defensive coding styles.\n"
+        "5. **Architectural & Design Patterns** — High-level structural choices observed in the code.\n"
+        "6. **Strict Anti-Patterns** — Call out 2-3 specific bad habits to aggressively avoid.\n\n"
+        "**Formatting Rules:**\n"
+        "- Use bold headings and clean sub-lists.\n"
+        "- Ensure code blocks have massive contrast and are perfectly syntactically correct.\n"
+        "- Keep the tone authoritative, clear, and pragmatic.\n"
+        "- Do NOT add generic introductory or concluding text (e.g., 'Here are the standards'). Start directly with the title."
+    )
 
 OUTPUT_FILENAME = "ai-coding-standards.md"
 
@@ -122,6 +125,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=3,
         help="Number of largest files to analyze (default: 3).",
     )
+    parser.add_argument(
+        "--out-dir",
+        type=str,
+        default=None,
+        help="Directory to save the output file (default: scanned directory).",
+    )
+    parser.add_argument(
+        "--out-file",
+        type=str,
+        default=None,
+        help="Name of the output file (default: <extension>.md).",
+    )
     return parser.parse_args(argv)
 
 
@@ -175,7 +190,7 @@ def aggregate_content(files: list[Path], root: Path) -> str:
 
 # ─── Step 4: LLM Call ────────────────────────────────────────────────────────
 
-def call_llm(content: str, api_key: str | None = None) -> str:
+def call_llm(content: str, ext: str, api_key: str | None = None) -> str:
     """Send aggregated content to Groq (Llama 3.3 70B) and return the analysis."""
     if Groq is None:
         console.print("[bold red]✗[/bold red] groq package not installed. Run: pip install groq")
@@ -195,7 +210,7 @@ def call_llm(content: str, api_key: str | None = None) -> str:
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": get_system_prompt(ext)},
                 {"role": "user", "content": content},
             ],
             temperature=0.3,
@@ -209,11 +224,13 @@ def call_llm(content: str, api_key: str | None = None) -> str:
 
 # ─── Step 5: File Output ─────────────────────────────────────────────────────
 
-def write_output(scan_path: str, markdown: str) -> Path:
+def write_output(out_dir: str, out_file: str, markdown: str) -> Path:
     """Write the generated standards to the output file."""
-    out_path = Path(scan_path).resolve() / OUTPUT_FILENAME
+    out_path = Path(out_dir).resolve() / out_file
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(markdown, encoding="utf-8")
     return out_path
+
 
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
@@ -229,8 +246,45 @@ def main():
         console.print("[dim]✨ No --path provided. Let's set it up![/dim]")
         args.path = Prompt.ask("📂 [bold cyan]Directory to scan[/bold cyan]", default=".")
         args.ext = Prompt.ask("📄 [bold cyan]File extension to look for[/bold cyan]", default=".py")
+        if not args.ext.startswith("."):
+            args.ext = f".{args.ext}"
         args.top = IntPrompt.ask("🔢 [bold cyan]Max files to analyze[/bold cyan]", default=3)
+        args.out_dir = Prompt.ask("📁 [bold cyan]Output directory[/bold cyan]", default=args.path)
+        
+        ext_clean = args.ext.lstrip(".") if args.ext.startswith(".") else args.ext
+        default_out = f"{ext_clean}.md" if ext_clean else "ai-coding-standards.md"
+        args.out_file = Prompt.ask("📝 [bold cyan]Output file name[/bold cyan]", default=default_out)
+        
+        console.print("\n[bold]Configuration Summary:[/bold]")
+        console.print(f"  • [cyan]Target Path:[/cyan] {args.path}")
+        console.print(f"  • [cyan]Extension:[/cyan]   {args.ext}")
+        console.print(f"  • [cyan]Max Files:[/cyan]   {args.top}")
+        console.print(f"  • [cyan]Output Dir:[/cyan]  {args.out_dir}")
+        console.print(f"  • [cyan]Output File:[/cyan] {args.out_file}")
         console.print()
+        
+        if not Confirm.ask("🚀 [bold green]Proceed with these settings?[/bold green]", default=True):
+            console.print("[dim]Aborted by user.[/dim]")
+            sys.exit(0)
+            
+        console.print()
+
+    # Strip quotes from paths to support drag-and-drop quoted paths on Windows
+    args.path = args.path.strip("\"'")
+    if args.out_dir is not None:
+        args.out_dir = args.out_dir.strip("\"'")
+    
+    # Ensure extension starts with a dot for consistent logging
+    if not args.ext.startswith("."):
+        args.ext = f".{args.ext}"
+
+    # Defaults for optional flags
+    if args.out_dir is None:
+        args.out_dir = args.path
+
+    if args.out_file is None:
+        ext_clean = args.ext.lstrip(".")
+        args.out_file = f"{ext_clean}.md" if ext_clean else "ai-coding-standards.md"
 
     root = Path(args.path).resolve()
 
@@ -286,13 +340,13 @@ def main():
         console=console,
     ) as progress:
         progress.add_task("Waiting for AI response…", total=None)
-        result = call_llm(content, args.api_key)
+        result = call_llm(content, args.ext, args.api_key)
 
     console.print("  [bold green]✓[/bold green] Analysis complete\n")
 
     # ── Step 4: Output ───────────────────────────────────────────────────
     console.print("[bold cyan]▸ STEP 4[/bold cyan]  Writing coding standards…\n")
-    out_path = write_output(args.path, result)
+    out_path = write_output(args.out_dir, args.out_file, result)
 
     # ── Done ─────────────────────────────────────────────────────────────
     console.print(

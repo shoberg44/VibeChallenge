@@ -272,11 +272,15 @@ class TestParseArgs:
             "--ext", ".js",
             "--api-key", "sk-test-key",
             "--top", "5",
+            "--out-dir", "/out/dir",
+            "--out-file", "rules.md",
         ])
         assert ns.path == "/my/project"
         assert ns.ext == ".js"
         assert ns.api_key == "sk-test-key"
         assert ns.top == 5
+        assert ns.out_dir == "/out/dir"
+        assert ns.out_file == "rules.md"
 
     def test_returns_namespace_object(self):
         """parse_args should return an argparse.Namespace instance."""
@@ -290,31 +294,31 @@ class TestParseArgs:
 
 
 class TestWriteOutput:
-    """Tests for write_output(scan_path, markdown)."""
+    """Tests for write_output(out_dir, out_file, markdown)."""
 
     def test_creates_output_file(self, tmp_path: Path):
         """The output file should be created in the target directory."""
-        vibe_check.write_output(str(tmp_path), "# Standards")
+        vibe_check.write_output(str(tmp_path), "ai-coding-standards.md", "# Standards")
         expected = tmp_path / "ai-coding-standards.md"
         assert expected.exists()
 
     def test_file_contains_exact_content(self, tmp_path: Path):
         """The written file should contain exactly the markdown passed in."""
         md = "# My Coding Standards\n\n- Rule 1\n- Rule 2\n"
-        vibe_check.write_output(str(tmp_path), md)
+        vibe_check.write_output(str(tmp_path), "ai-coding-standards.md", md)
         content = (tmp_path / "ai-coding-standards.md").read_text(encoding="utf-8")
         assert content == md
 
     def test_returns_correct_path(self, tmp_path: Path):
         """write_output must return the Path object pointing to the new file."""
-        result = vibe_check.write_output(str(tmp_path), "content")
+        result = vibe_check.write_output(str(tmp_path), "ai-coding-standards.md", "content")
         expected = (tmp_path / "ai-coding-standards.md").resolve()
         assert result == expected
 
     def test_overwrites_existing_file(self, tmp_path: Path):
         """If the file already exists, it should be overwritten cleanly."""
-        vibe_check.write_output(str(tmp_path), "old content")
-        vibe_check.write_output(str(tmp_path), "new content")
+        vibe_check.write_output(str(tmp_path), "ai-coding-standards.md", "old content")
+        vibe_check.write_output(str(tmp_path), "ai-coding-standards.md", "new content")
         content = (tmp_path / "ai-coding-standards.md").read_text(encoding="utf-8")
         assert content == "new content"
 
@@ -349,7 +353,7 @@ class TestCallLLM:
         mock_client.chat.completions.create.return_value = self._build_mock_response()
         mock_groq_cls.return_value = mock_client
 
-        vibe_check.call_llm("sample code", api_key="sk-test")
+        vibe_check.call_llm("sample code", ".py", api_key="sk-test")
 
         call_kwargs = mock_client.chat.completions.create.call_args
         assert call_kwargs.kwargs["model"] == "llama-3.3-70b-versatile"
@@ -361,13 +365,13 @@ class TestCallLLM:
         mock_client.chat.completions.create.return_value = self._build_mock_response()
         mock_groq_cls.return_value = mock_client
 
-        vibe_check.call_llm("sample code", api_key="sk-test")
+        vibe_check.call_llm("sample code", ".py", api_key="sk-test")
 
         call_kwargs = mock_client.chat.completions.create.call_args
         messages = call_kwargs.kwargs["messages"]
         system_msgs = [m for m in messages if m["role"] == "system"]
         assert len(system_msgs) == 1
-        assert system_msgs[0]["content"] == vibe_check.SYSTEM_PROMPT
+        assert system_msgs[0]["content"] == vibe_check.get_system_prompt(".py")
 
     @patch("vibe_check.Groq")
     def test_returns_response_content(self, mock_groq_cls):
@@ -378,14 +382,14 @@ class TestCallLLM:
         )
         mock_groq_cls.return_value = mock_client
 
-        result = vibe_check.call_llm("code here", api_key="sk-test")
+        result = vibe_check.call_llm("code here", ".py", api_key="sk-test")
         assert result == "# Generated Standards"
 
     def test_exits_when_no_api_key(self, monkeypatch):
         """Should sys.exit(1) when no API key is provided and env var is unset."""
         monkeypatch.delenv("GROQ_API_KEY", raising=False)
         with pytest.raises(SystemExit) as exc_info:
-            vibe_check.call_llm("code", api_key=None)
+            vibe_check.call_llm("code", ".py", api_key=None)
         assert exc_info.value.code == 1
 
     @patch("vibe_check.Groq")
@@ -396,14 +400,14 @@ class TestCallLLM:
         mock_groq_cls.return_value = mock_client
 
         with pytest.raises(SystemExit) as exc_info:
-            vibe_check.call_llm("code", api_key="sk-test")
+            vibe_check.call_llm("code", ".py", api_key="sk-test")
         assert exc_info.value.code == 1
 
     def test_exits_when_groq_not_installed(self, monkeypatch):
         """Should sys.exit(1) when the groq package is not available."""
         monkeypatch.setattr(vibe_check, "Groq", None)
         with pytest.raises(SystemExit) as exc_info:
-            vibe_check.call_llm("code", api_key="sk-test")
+            vibe_check.call_llm("code", ".py", api_key="sk-test")
         assert exc_info.value.code == 1
 
     @patch("vibe_check.Groq")
@@ -414,7 +418,7 @@ class TestCallLLM:
         mock_client.chat.completions.create.return_value = self._build_mock_response()
         mock_groq_cls.return_value = mock_client
 
-        vibe_check.call_llm("code", api_key=None)
+        vibe_check.call_llm("code", ".py", api_key=None)
 
         mock_groq_cls.assert_called_once_with(api_key="sk-env-key")
 
@@ -426,6 +430,6 @@ class TestCallLLM:
         mock_client.chat.completions.create.return_value = self._build_mock_response()
         mock_groq_cls.return_value = mock_client
 
-        vibe_check.call_llm("code", api_key="sk-explicit")
+        vibe_check.call_llm("code", ".py", api_key="sk-explicit")
 
         mock_groq_cls.assert_called_once_with(api_key="sk-explicit")
